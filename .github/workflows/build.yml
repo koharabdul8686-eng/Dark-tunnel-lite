@@ -1,1 +1,93 @@
 
+name: Build APK
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cari project (zip atau folder)
+        run: |
+          set -e
+          echo "Isi root repo:"; ls -la
+          rm -rf _proj && mkdir _proj
+          S=""
+
+          # 1) Coba semua file .zip di root (project.zip didahulukan, nama berspasi aman).
+          { [ -f project.zip ] && echo "./project.zip"; find . -maxdepth 1 -iname '*.zip' ! -name 'project.zip' | sort; } > /tmp/zips.txt || true
+          n=0
+          while IFS= read -r Z; do
+            [ -n "$Z" ] || continue
+            n=$((n+1))
+            echo "--- cek zip: $Z"
+            mkdir -p "_proj/$n"
+            if ! unzip -q "$Z" -d "_proj/$n"; then echo "    dilewati: zip tidak bisa dibuka"; continue; fi
+            C=$(find "_proj/$n" -maxdepth 4 -name settings.gradle.kts | head -n 1)
+            if [ -z "$C" ]; then echo "    dilewati: tidak ada settings.gradle.kts"; continue; fi
+            if grep -rq "javax.net.SocketFactory" "$(dirname "$C")/app/src" 2>/dev/null; then
+              echo "    dilewati: ini versi LAMA (kode lama yang error)"; continue
+            fi
+            echo "    DIPAKAI: $Z"
+            S="$C"
+            break
+          done < /tmp/zips.txt
+
+          # 2) Kalau tidak ada zip yang cocok, coba proyek yang sudah diekstrak di repo.
+          if [ -z "$S" ]; then
+            C=$(find . -maxdepth 4 -name settings.gradle.kts -not -path './.git/*' -not -path './_proj/*' | head -n 1)
+            if [ -n "$C" ] && ! grep -rq "javax.net.SocketFactory" "$(dirname "$C")/app/src" 2>/dev/null; then
+              S="$C"; echo "Memakai folder proyek: $(dirname "$C")"
+            fi
+          fi
+
+          if [ -z "$S" ]; then
+            echo "ERROR: tidak ada proyek yang valid (zip terbaru) di root repo."
+            echo "Upload project.zip versi terbaru ke halaman utama repo."
+            exit 1
+          fi
+          echo "PROJECT_DIR=$(dirname "$S")" >> "$GITHUB_ENV"
+          echo "Project ditemukan di: $(dirname "$S")"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Build APK (signed with debug key)
+        run: |
+          set -o pipefail
+          gradle -p "$PROJECT_DIR" assembleRelease --no-daemon --console=plain 2>&1 | tee build.log
+
+      - name: Tampilkan ERROR UTAMA (hanya jika gagal)
+        if: failure()
+        run: |
+          echo "=============== ERROR UTAMA ==============="
+          grep -nE "^e: |error:|What went wrong|Execution failed|Caused by|Could not" -A4 build.log | head -n 80 || true
+
+      - name: Rename APK
+        run: cp "$PROJECT_DIR"/app/build/outputs/apk/release/app-release.apk AANG-TUNNEL-LITE.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AANG-TUNNEL-LITE-apk
+          path: AANG-TUNNEL-LITE.apk
+
+      - name: Publish release (only for tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: AANG-TUNNEL-LITE.apk
