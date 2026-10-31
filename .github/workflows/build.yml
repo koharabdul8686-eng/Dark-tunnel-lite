@@ -15,14 +15,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Unzip project.zip
+      - name: Cari project (zip atau folder)
         run: |
-          test -f project.zip || { echo "project.zip tidak ada di root repo"; exit 1; }
-          rm -rf _proj && mkdir _proj
-          unzip -q project.zip -d _proj
-          S=$(find _proj -maxdepth 3 -name settings.gradle.kts | head -n 1)
-          test -n "$S" || { echo "settings.gradle.kts tidak ditemukan di zip"; exit 1; }
+          set -e
+          echo "Isi root repo:"; ls -la
+          S=$(find . -maxdepth 4 -name settings.gradle.kts -not -path './.git/*' | head -n 1)
+          if [ -z "$S" ]; then
+            Z=$(find . -maxdepth 1 -iname '*.zip' | head -n 1)
+            if [ -z "$Z" ]; then
+              echo "ERROR: tidak ada settings.gradle.kts dan tidak ada file .zip di root repo."
+              echo "Upload project.zip ke halaman utama repo (bukan di dalam folder)."
+              exit 1
+            fi
+            echo "Memakai zip: $Z"
+            rm -rf _proj && mkdir _proj
+            unzip -q "$Z" -d _proj
+            S=$(find _proj -maxdepth 4 -name settings.gradle.kts | head -n 1)
+          fi
+          test -n "$S" || { echo "ERROR: settings.gradle.kts tidak ditemukan di zip"; exit 1; }
           echo "PROJECT_DIR=$(dirname "$S")" >> "$GITHUB_ENV"
+          echo "Project ditemukan di: $(dirname "$S")"
 
       - uses: actions/setup-java@v4
         with:
