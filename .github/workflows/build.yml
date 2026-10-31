@@ -78,15 +78,15 @@ jobs:
           grep -nE "^e: |error:|What went wrong|Execution failed|Caused by|Could not" -A4 build.log | head -n 80 || true
 
       - name: Rename APK
-        run: cp "$PROJECT_DIR"/app/build/outputs/apk/release/app-release.apk LiteTunnel.apk
+        run: cp "$PROJECT_DIR"/app/build/outputs/apk/release/app-release.apk AANG-TUNNEL-LITE.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: LiteTunnel-apk
-          path: LiteTunnel.apk
+          name: AANG-TUNNEL-LITE-apk
+          path: AANG-TUNNEL-LITE.apk
 
       - name: Publish release (only for tag v*)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: LiteTunnel.apk
+          files: AANG-TUNNEL-LITE.apk
