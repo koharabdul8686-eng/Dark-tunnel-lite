@@ -19,41 +19,43 @@ jobs:
         run: |
           set -e
           echo "Isi root repo:"; ls -la
+          rm -rf _proj && mkdir _proj
           S=""
-          if [ -f project.zip ]; then
-            Z=./project.zip
-          else
-            S=$(find . -maxdepth 4 -name settings.gradle.kts -not -path './.git/*' | head -n 1)
-            if [ -z "$S" ]; then
-              N=$(find . -maxdepth 1 -iname '*.zip' | wc -l)
-              if [ "$N" -eq 1 ]; then
-                Z=$(find . -maxdepth 1 -iname '*.zip')
-              elif [ "$N" -eq 0 ]; then
-                echo "ERROR: tidak ada project.zip / settings.gradle.kts di root repo."
-                exit 1
-              else
-                echo "ERROR: ada $N file zip di root dan tidak ada project.zip."
-                echo "Hapus zip lama, sisakan satu bernama project.zip."
-                find . -maxdepth 1 -iname '*.zip'
-                exit 1
-              fi
+
+          # 1) Coba semua file .zip di root (project.zip didahulukan, nama berspasi aman).
+          { [ -f project.zip ] && echo "./project.zip"; find . -maxdepth 1 -iname '*.zip' ! -name 'project.zip' | sort; } > /tmp/zips.txt || true
+          n=0
+          while IFS= read -r Z; do
+            [ -n "$Z" ] || continue
+            n=$((n+1))
+            echo "--- cek zip: $Z"
+            mkdir -p "_proj/$n"
+            if ! unzip -q "$Z" -d "_proj/$n"; then echo "    dilewati: zip tidak bisa dibuka"; continue; fi
+            C=$(find "_proj/$n" -maxdepth 4 -name settings.gradle.kts | head -n 1)
+            if [ -z "$C" ]; then echo "    dilewati: tidak ada settings.gradle.kts"; continue; fi
+            if grep -rq "javax.net.SocketFactory" "$(dirname "$C")/app/src" 2>/dev/null; then
+              echo "    dilewati: ini versi LAMA (kode lama yang error)"; continue
+            fi
+            echo "    DIPAKAI: $Z"
+            S="$C"
+            break
+          done < /tmp/zips.txt
+
+          # 2) Kalau tidak ada zip yang cocok, coba proyek yang sudah diekstrak di repo.
+          if [ -z "$S" ]; then
+            C=$(find . -maxdepth 4 -name settings.gradle.kts -not -path './.git/*' -not -path './_proj/*' | head -n 1)
+            if [ -n "$C" ] && ! grep -rq "javax.net.SocketFactory" "$(dirname "$C")/app/src" 2>/dev/null; then
+              S="$C"; echo "Memakai folder proyek: $(dirname "$C")"
             fi
           fi
+
           if [ -z "$S" ]; then
-            echo "Memakai zip: $Z"
-            rm -rf _proj && mkdir _proj
-            unzip -q "$Z" -d _proj
-            S=$(find _proj -maxdepth 4 -name settings.gradle.kts | head -n 1)
-          fi
-          test -n "$S" || { echo "ERROR: settings.gradle.kts tidak ditemukan"; exit 1; }
-          D=$(dirname "$S")
-          if grep -rq "javax.net.SocketFactory" "$D/app/src" 2>/dev/null; then
-            echo "ERROR: yang terpakai adalah ZIP LAMA (masih ada javax.net.SocketFactory)."
-            echo "Upload ulang project.zip terbaru dengan nama persis project.zip, lalu hapus zip lain."
+            echo "ERROR: tidak ada proyek yang valid (zip terbaru) di root repo."
+            echo "Upload project.zip versi terbaru ke halaman utama repo."
             exit 1
           fi
-          echo "PROJECT_DIR=$D" >> "$GITHUB_ENV"
-          echo "Project ditemukan di: $D"
+          echo "PROJECT_DIR=$(dirname "$S")" >> "$GITHUB_ENV"
+          echo "Project ditemukan di: $(dirname "$S")"
 
       - uses: actions/setup-java@v4
         with:
