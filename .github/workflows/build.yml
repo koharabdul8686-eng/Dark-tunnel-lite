@@ -19,22 +19,41 @@ jobs:
         run: |
           set -e
           echo "Isi root repo:"; ls -la
-          S=$(find . -maxdepth 4 -name settings.gradle.kts -not -path './.git/*' | head -n 1)
-          if [ -z "$S" ]; then
-            Z=$(find . -maxdepth 1 -iname '*.zip' | head -n 1)
-            if [ -z "$Z" ]; then
-              echo "ERROR: tidak ada settings.gradle.kts dan tidak ada file .zip di root repo."
-              echo "Upload project.zip ke halaman utama repo (bukan di dalam folder)."
-              exit 1
+          S=""
+          if [ -f project.zip ]; then
+            Z=./project.zip
+          else
+            S=$(find . -maxdepth 4 -name settings.gradle.kts -not -path './.git/*' | head -n 1)
+            if [ -z "$S" ]; then
+              N=$(find . -maxdepth 1 -iname '*.zip' | wc -l)
+              if [ "$N" -eq 1 ]; then
+                Z=$(find . -maxdepth 1 -iname '*.zip')
+              elif [ "$N" -eq 0 ]; then
+                echo "ERROR: tidak ada project.zip / settings.gradle.kts di root repo."
+                exit 1
+              else
+                echo "ERROR: ada $N file zip di root dan tidak ada project.zip."
+                echo "Hapus zip lama, sisakan satu bernama project.zip."
+                find . -maxdepth 1 -iname '*.zip'
+                exit 1
+              fi
             fi
+          fi
+          if [ -z "$S" ]; then
             echo "Memakai zip: $Z"
             rm -rf _proj && mkdir _proj
             unzip -q "$Z" -d _proj
             S=$(find _proj -maxdepth 4 -name settings.gradle.kts | head -n 1)
           fi
-          test -n "$S" || { echo "ERROR: settings.gradle.kts tidak ditemukan di zip"; exit 1; }
-          echo "PROJECT_DIR=$(dirname "$S")" >> "$GITHUB_ENV"
-          echo "Project ditemukan di: $(dirname "$S")"
+          test -n "$S" || { echo "ERROR: settings.gradle.kts tidak ditemukan"; exit 1; }
+          D=$(dirname "$S")
+          if grep -rq "javax.net.SocketFactory" "$D/app/src" 2>/dev/null; then
+            echo "ERROR: yang terpakai adalah ZIP LAMA (masih ada javax.net.SocketFactory)."
+            echo "Upload ulang project.zip terbaru dengan nama persis project.zip, lalu hapus zip lain."
+            exit 1
+          fi
+          echo "PROJECT_DIR=$D" >> "$GITHUB_ENV"
+          echo "Project ditemukan di: $D"
 
       - uses: actions/setup-java@v4
         with:
