@@ -1,1 +1,41 @@
+name: Release APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cari file APK (unzip kalau perlu)
+        run: |
+          mkdir -p out
+          # Ambil APK yang langsung ada di repo
+          find . -path ./out -prune -o -type f -iname '*.apk' -print -exec cp {} out/ \;
+          # Kalau belum ada, ekstrak dari file zip
+          if ! ls out/*.apk >/dev/null 2>&1; then
+            for z in $(find . -path ./out -prune -o -type f -iname '*.zip' -print); do
+              unzip -o -j "$z" '*.apk' -d out || true
+            done
+          fi
+          if ! ls out/*.apk >/dev/null 2>&1; then
+            echo "Tidak ada file .apk atau .zip berisi .apk di repo ini."
+            exit 1
+          fi
+          ls -la out
+
+      - name: Publish ke Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: AANG TUNNEL LITE build ${{ github.run_number }}
+          files: out/*.apk
 
